@@ -275,6 +275,25 @@
     box-shadow: 0 2px 8px rgba(30,124,70,0.07);
     flex-direction: row;
   }
+  .form-message {
+  padding: 14px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 15px;
+}
+
+.form-message.error {
+  background: #fdecea;
+  border: 1px solid #f5b5ad;
+  color: #c0392b;
+}
+
+.form-message.success {
+  background: #eaf8ef;
+  border: 1px solid #8fd19e;
+  color: #137333;
+}
   @keyframes slideIn {
     from { opacity: 0; transform: translateY(-10px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -376,7 +395,7 @@
   .success-box h3 {
     font-family: 'Inter', sans-serif;
     font-size: 22px;
-    color: var(--white);
+    color: var(--text);
     margin-bottom: 10px;
     line-height: 1.8;
   }
@@ -590,6 +609,8 @@
       helpText: 'For help, call or WhatsApp:',
       successTitle: 'Registration Completed',
       successText: 'Your information has been received. Our team will contact you soon.',
+      formSuccess: 'Information received successfully.',
+      duplicateSuccess: 'Your data is already received.',
       contactText2: 'For more information:',
       closeBtn: 'Close',
       docUploaded: 'Uploaded',
@@ -645,6 +666,8 @@
       helpText: 'مدد کے لیے کال یا واٹس ایپ کریں:',
       successTitle: 'رجسٹریشن مکمل ہو گئی',
       successText: 'آپ کی معلومات موصول ہو گئی ہیں۔ ہماری ٹیم جلد آپ سے رابطہ کرے گی۔',
+      formSuccess: 'آپ کی معلومات کامیابی سے موصول ہو گئی ہیں۔',
+      duplicateSuccess: 'آپ کا ڈیٹا پہلے ہی موصول ہو چکا ہے۔',
       contactText2: 'مزید معلومات کے لیے:',
       closeBtn: 'بند کریں',
       docUploaded: 'اپلوڈ ہو گئی',
@@ -898,23 +921,43 @@
     }
   }
 
-  function showFormError(msg) {
-    let el = document.getElementById('form-submit-error');
+  function showFormMessage(msg, type = 'error') {
+    let el = document.getElementById('formMessage');
     if (!el) {
       el = document.createElement('div');
-      el.id = 'form-submit-error';
+      el.id = 'formMessage';
       const btn = document.getElementById('submitBtn');
       btn.parentNode.insertBefore(el, btn);
     }
-    el.style.cssText = 'margin:16px 0;padding:14px 18px;background:#FFF0EE;border:2px solid #F5C6C2;border-radius:10px;color:#C0392B;font-size:14px;font-weight:600;text-align:' + (currentLang === 'ur' ? 'right' : 'left') + ';line-height:2;';
+    el.className = 'form-message ' + type;
+    el.style.textAlign = currentLang === 'ur' ? 'right' : 'left';
+    el.style.lineHeight = '2';
     el.textContent = msg;
     el.style.display = 'block';
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
+  function showFormError(msg) {
+    showFormMessage(msg, 'error');
+  }
+
+  function showFormSuccess(msg) {
+    showFormMessage(msg, 'success');
+  }
+
   function hideFormError() {
-    const el = document.getElementById('form-submit-error');
+    const el = document.getElementById('formMessage');
     if (el) el.style.display = 'none';
+  }
+
+  function isDuplicateSubmissionError(err) {
+    if (!err) return false;
+    const msg = String(err.message || err.details || err.hint || '').toLowerCase();
+    return err.code === '23505' ||
+      msg.includes('duplicate key') ||
+      msg.includes('workers_cnic_unique') ||
+      msg.includes('unique constraint') ||
+      msg.includes('cnic');
   }
 
   function markInvalid(id) {
@@ -929,6 +972,7 @@
   }
 
   async function submitForm() {
+    if (isSubmitting) return;
     hideFormError();
     const required = ['name','fatherName','cnic','city','passport','phone','trade'];
     let valid = true;
@@ -986,7 +1030,14 @@
         .select('id')
         .single();
 
-      if (workerErr) throw new Error(t('dataError') + workerErr.message);
+      if (workerErr) {
+        if (isDuplicateSubmissionError(workerErr)) {
+          setSubmitState(false);
+          showFormSuccess(t('duplicateSuccess'));
+          return;
+        }
+        throw new Error(t('dataError') + workerErr.message);
+      }
       const workerId = workerRow.id;
 
       for (let i = 0; i < uploadedFiles.length; i++) {
@@ -1008,10 +1059,15 @@
       }
 
       setSubmitState(false);
+      showFormSuccess(t('formSuccess'));
       document.getElementById('success-msg').classList.add('show');
     } catch (err) {
       setSubmitState(false);
-      showFormError(err.message || t('generalError'));
+      if (isDuplicateSubmissionError(err)) {
+        showFormSuccess(t('duplicateSuccess'));
+      } else {
+        showFormError(err.message || t('generalError'));
+      }
       console.error('Submission error:', err);
     }
   }
